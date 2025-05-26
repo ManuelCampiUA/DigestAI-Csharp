@@ -4,6 +4,7 @@ namespace DigestAI_C_
 {
     public class Program
     {
+        // cd Digest e poi dotnet run . 
         public static async Task Main(string[] args)
         {
             if (args.Length == 0 || args.Any(a => a.Equals("--help", StringComparison.OrdinalIgnoreCase) || a.Equals("-h", StringComparison.OrdinalIgnoreCase)))
@@ -84,10 +85,7 @@ namespace DigestAI_C_
                     {
                         return args[i + 1];
                     }
-                    // Se l'argomento è seguito da un'altra opzione, significa che il valore manca
-                    Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.WriteLine($"Warning: Argument '{argumentName}' is missing a value.");
-                    Console.ResetColor();
+                    Console.Error.WriteLine($"Warning: Argument '{argumentName}' is missing a value.");
                     return null;
                 }
             }
