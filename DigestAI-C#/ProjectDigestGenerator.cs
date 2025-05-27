@@ -9,7 +9,7 @@ namespace DigestAI_Csharp
         {
             ".cs", ".js", ".ts", ".jsx", ".tsx", ".py", ".java", ".cpp", ".h", ".hpp", ".hh", ".c", ".cc",
             ".html", ".css", ".scss", ".vue", ".php", ".rb", ".go", ".rs",
-            ".sql", ".json", ".xml", ".yaml", ".yml", ".md", ".txt", ".sh", ".ps1", ".csproj", "sln"
+            ".sql", ".json", ".xml", ".yaml", ".yml", ".md", ".txt", ".sh", ".ps1", ".csproj", ".sln"
             // NOTA: .csproj e .sln sono stati aggiunti qui, valuta se spostarli in _priorityIncludesIfNeeded
         };
 
@@ -45,10 +45,10 @@ namespace DigestAI_Csharp
             // Frontend - Build/Generated
             "*.min.js", "*.min.css", "*.map",
             "*.bundle.js", "*.chunk.js", "manifest.json",
-            // Frontend - Alcuni file di configurazione (se si vogliono escludere, altrimenti rimuovere da qui)
-            // "tsconfig.json", "package.json", "angular.json", "vue.config.js", "next.config.js",
-            // "webpack.config.js", "tailwind.config.js", "jest.config.js", "eslint.config.js",
+             "webpack.config.js", "tailwind.config.js", "jest.config.js", "eslint.config.js",
+            // Commentati perché spesso utili per l'AI. Se non desiderati, decommentare.
             // ".eslintrc.*", "prettier.config.js", ".prettierrc.*",
+            // "tsconfig.json", "package.json",
             // Commentati perché spesso utili per l'AI. Se non desiderati, decommentare.
 
             // Environment/Secrets
@@ -62,7 +62,8 @@ namespace DigestAI_Csharp
             // Logs
             "*.log", "npm-debug.log*", "yarn-debug.log*", "lerna-debug.log*",
             // OS
-            /* ".DS_Store", "Thumbs.db", */ "ehthumbs.db", // Già coperti da _excludedFolders per le cartelle, ma qui per file singoli alla radice.
+            /* ".DS_Store", "Thumbs.db", */ 
+            "ehthumbs.db", // Già coperti da _excludedFolders per le cartelle, ma qui per file singoli alla radice.
             // Documentation (ESCLUSI tranne README o file in _priorityIncludes)
             "CHANGELOG.md", "LICENSE", "LICENSE.txt", "CONTRIBUTING.md",
             // Database
@@ -93,11 +94,7 @@ namespace DigestAI_Csharp
 
             if (filesToDigest.Count == 0)
             {
-                Console.ForegroundColor = ConsoleColor.Yellow;
                 Console.WriteLine("⚠️ No relevant files found to generate the digest.");
-                Console.ResetColor();
-                // Crea comunque un file vuoto o con un messaggio? Per ora, esce senza creare il file.
-                // Se si vuole un file vuoto: await File.WriteAllTextAsync(outputFilePath, "# AI Project Digest\n\nNo relevant files found.");
                 return;
             }
 
@@ -107,7 +104,7 @@ namespace DigestAI_Csharp
 
             // Header del Markdown
             markdownBuilder.AppendLine($"Total files included: {filesToDigest.Count}\n");
-            markdownBuilder.AppendLine("---");
+            markdownBuilder.AppendLine();
 
             // Contenuto dei file
             int processedCount = 0;
@@ -137,8 +134,7 @@ namespace DigestAI_Csharp
                 markdownBuilder.AppendLine($"Language: `{language}`");
                 markdownBuilder.AppendLine($"\n```{language}");
                 markdownBuilder.AppendLine(content);
-                markdownBuilder.AppendLine("```");
-                markdownBuilder.AppendLine("\n---");
+                markdownBuilder.AppendLine();
             }
 
             try
