@@ -9,7 +9,7 @@ namespace DigestAI_Csharp
         {
             ".cs", ".js", ".ts", ".jsx", ".tsx", ".py", ".java", ".cpp", ".h", ".hpp", ".hh", ".c", ".cc",
             ".html", ".css", ".scss", ".vue", ".php", ".rb", ".go", ".rs",
-            ".sql", ".json", ".xml", ".yaml", ".yml", ".md", ".txt", ".sh", ".ps1", ".csproj", "sln"
+            ".sql", ".json", ".xml", ".yaml", ".yml", ".md", ".txt", ".sh", ".ps1", ".csproj", ".sln"
             // NOTA: .csproj e .sln sono stati aggiunti qui, valuta se spostarli in _priorityIncludesIfNeeded
         };
 
