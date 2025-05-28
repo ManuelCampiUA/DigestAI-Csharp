@@ -290,7 +290,10 @@ public class ProjectDigestGenerator
             markdown.AppendLine();
             markdown.AppendLine($"```{language}");
             markdown.AppendLine(fileContent);
+            markdown.AppendLine("```");
+            markdown.AppendLine();
             markdown.AppendLine("---");
+
         }
 
         return markdown.ToString();
