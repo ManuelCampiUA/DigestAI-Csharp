@@ -4,228 +4,300 @@ namespace DigestAICsharp;
 
 public class ProjectDigestGenerator
 {
-    // Estensioni dei file da includere (sempre lowercase per confronto normalizzato)
-    private readonly HashSet<string> _includedExtensions =
-    [
-        ".cs", ".js", ".ts", ".jsx", ".tsx", ".py", ".java", ".cpp", ".h", ".hpp", ".hh", ".c", ".cc",
-        ".html", ".css", ".scss", ".vue", ".php", ".rb", ".go", ".rs",
-        ".sql", ".json", ".xml", ".yaml", ".yml", ".md", ".txt", ".sh", ".ps1", ".csproj", ".sln"
-        // NOTA: .csproj e .sln sono stati aggiunti qui, valuta se spostarli in _priorityIncludesIfNeeded
-    ];
+    // File importanti da includere sempre (case-insensitive)
+    private readonly HashSet<string> _priorityFiles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "README.md", "README.txt", "README.rst", "README", "ReadMe.md",
+    };
 
-    // Cartelle da escludere (confronto case-insensitive)
-    private readonly HashSet<string> _excludedFolders =
-    [
+    // Estensioni file da includere
+    private readonly HashSet<string> _allowedExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
         // .NET/C#
-        "bin", "obj", "packages", "TestResults", ".vs", "publish",
-        // Frontend generale
-        "node_modules", "dist", "build", "out", ".next", ".nuxt", ".svelte-kit",
-        // Cache e temp
-        ".vscode", ".idea", "temp", "tmp", ".cache", ".parcel-cache",
-        // Version control
-        ".git", ".svn", ".hg",
-        // OS
-        ".DS_Store", "Thumbs.db",
-        // Coverage/Testing
-        "coverage", "nyc_output", ".nyc_output", "TestCoverage",
-        // Logs
-        "logs", "log"
-    ];
+        ".cs", ".csx", ".csproj", ".sln", ".props", ".targets",
+        
+        // Web Frontend
+        ".js", ".ts", ".jsx", ".tsx", ".vue", ".svelte", ".html", ".htm", ".css", ".scss", ".sass", ".less",
+        
+        // Backend Languages
+        ".py", ".java", ".php", ".rb", ".go", ".rs", ".kt", ".cpp", ".cxx", ".cc", ".c++", ".h", ".hpp", ".hh", ".c", ".fs", ".fsi", ".fsx",
+        
+        // Config/Data
+        ".json", ".xml", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".sql", ".graphql", ".proto",
+        
+        // Documentation/Scripts
+        ".md", ".markdown", ".txt", ".rst", ".sh", ".bash", ".zsh", ".ps1", ".bat", ".cmd",
+        
+        // Docker/Container
+        ".dockerfile", ".dockerignore"
+    };
 
-    // Pattern di nomi file da escludere (confronto case-insensitive, wildcard semplici)
-    private readonly HashSet<string> _excludedFilePatterns =
-    [
-        // .NET/C# - Config sensibili
-        "appsettings.json", "appsettings.*.json", "secrets.json", "web.config", "app.config", "connectionstrings.json",
-        // .NET - Generated/Build (esclusi file binari, di debug e assembly info generati)
-        "*.dll", "*.pdb", "*.exe", "*.msi", "*.nupkg", "*.snupkg",
-        "GlobalAssemblyInfo.cs", "AssemblyInfo.cs", "*.Generated.cs",
-        // Frontend - Dipendenze/Lock files
-        "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "composer.lock",
-        // Frontend - Build/Generated
-        "*.min.js", "*.min.css", "*.map",
-        "*.bundle.js", "*.chunk.js", "manifest.json",
-        // Frontend - Alcuni file di configurazione (se si vogliono escludere, altrimenti rimuovere da qui)
-        // "tsconfig.json", "package.json", "angular.json", "vue.config.js", "next.config.js",
-        // "webpack.config.js", "tailwind.config.js", "jest.config.js", "eslint.config.js",
-        // ".eslintrc.*", "prettier.config.js", ".prettierrc.*",
-        // Commentati perché spesso utili per l'AI. Se non desiderati, decommentare.
-
-        // Environment/Secrets
-        ".env", ".env.*", "*.pem", "*.key", "*.crt", "*.pfx",
-        // Git
-        ".gitignore", ".gitattributes", ".gitmodules",
-        // Editor/IDE
-        "*.swp", "*.swo", "*~", "*.user", "*.suo", "*.userprefs",
+    // Cartelle da ignorare
+    private readonly HashSet<string> _ignoredFolders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // .NET Build/Packages
+        "bin", "obj", "packages", "TestResults", ".vs", "publish", "artifacts", "output", "release", "debug",
+        
+        // Node.js/Frontend
+        "node_modules", "dist", "build", "out", ".next", ".nuxt", "public/build", "wwwroot/dist", "assets/build",
+        
+        // IDEs/Editors
+        ".vscode", ".idea", ".vs", "*.xcworkspace", "*.xcodeproj",
+        
+        // Temporary/Cache
+        "temp", "tmp", ".cache", ".temp", "cache",
+        
+        // Version Control
+        ".git", ".svn", ".hg", ".bzr",
+        
         // Testing/Coverage
-        "*.coverage", "coverage.xml", "*.lcov",
+        "coverage", "TestCoverage", "CodeCoverage", "test-results",
+        
+        // Logs
+        "logs", "log", "LogFiles",
+
+        // Other common
+        "target", // Rust/Java/Scala
+        "__pycache__", ".pytest_cache", // Python
+        ".nuget" // NuGet local cache
+    };
+
+    // Pattern file da ignorare
+    private readonly HashSet<string> _ignoredFilePatterns = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Speciali
+        "digestedCode.txt",
+        
+        // .NET/C# - Config sensitive
+        "appsettings.json", "appsettings.*.json", "secrets.json", "web.config", "app.config", "connectionstrings.json", "launchSettings.json",
+        
+        // .NET - Generated/Build artifacts
+        "*.dll", "*.pdb", "*.exe", "*.msi", "*.nupkg", "*.snupkg", "GlobalAssemblyInfo.cs", "AssemblyInfo.cs", "*.Generated.cs", "*.g.cs", "*.g.i.cs", "TemporaryGeneratedFile_*",
+        
+        // Frontend - Lock files & build artifacts
+        "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "composer.lock", "*.min.js", "*.min.css", "*.map", "*.bundle.js", "*.chunk.js", "manifest.json", "asset-manifest.json",
+        
+        // Environment/Secrets
+        ".env", ".env.*", "*.pem", "*.key", "*.crt", "*.pfx", "*.p12",
+        
+        // Git files
+        ".gitignore", ".gitattributes", ".gitmodules", ".gitkeep",
+        
+        // Editor/IDE specifici
+        "*.swp", "*.swo", "*~", "*.user", "*.suo", "*.userprefs",
+        ".DS_Store", "Thumbs.db", "desktop.ini",
+        
+        // Testing/Coverage
+        "*.coverage", "coverage.xml", "*.lcov", "*.trx", "*.runsettings",
+        
         // Logs
         "*.log", "npm-debug.log*", "yarn-debug.log*", "lerna-debug.log*",
-        // OS
-        /* ".DS_Store", "Thumbs.db", */ "ehthumbs.db", // Già coperti da _excludedFolders per le cartelle, ma qui per file singoli alla radice.
-        // Documentation (ESCLUSI tranne README o file in _priorityIncludes)
-        "CHANGELOG.md", "LICENSE", "LICENSE.txt", "CONTRIBUTING.md",
-        // Database
-        "*.db", "*.sqlite", "*.sqlite3", "*.mdf", "*.ldf",
-        // Backup files
-        "*.bak", "*.backup", "*.old", "*.orig"
-    ];
-
-    // File da includere prioritariamente (es. README), bypassano alcune esclusioni (non l'esclusione di cartelle)
-    // Confronto case-insensitive
-    private readonly HashSet<string> _priorityIncludes =
-    [
-        "README.md", "README.txt", "README", "ReadMe.md"
-        // Aggiungere qui altri file specifici che si vogliono sempre includere,
-        // come "ARCHITECTURE.md", "TODO.md", ecc.
-    ];
+        
+        // Database files
+        "*.db", "*.sqlite", "*.sqlite3", "*.mdf", "*.ldf", "*.bak",
+        
+        // Backup e temporanei
+        "*.backup", "*.old", "*.orig", "*.tmp", "*~", "*.swp",
+        
+        // OS specific
+        ".DS_Store", "Thumbs.db", "desktop.ini", "*.lnk",
+        
+        // Docker/Container 
+        ".dockerignore", 
+        
+        // Archive files
+        "*.zip", "*.rar", "*.7z", "*.tar", "*.gz", "*.bz2",
+        
+        // Media files (solitamente non utili per AI)
+        "*.jpg", "*.jpeg", "*.png", "*.gif", "*.bmp", "*.ico", "*.mp4", "*.avi", "*.mov", "*.wmv", "*.mp3", "*.wav"
+    };
 
     public void Generate(string projectPath, string outputFilePath)
     {
+        // Verifica che la cartella esista
         if (!Directory.Exists(projectPath))
             throw new DirectoryNotFoundException($"Project directory not found: {projectPath}");
 
         Console.WriteLine($"🔍 Scanning project: {projectPath}");
 
-        var filesToDigest = GetRelevantFiles(projectPath).ToList();
+        // Trova tutti i file
+        var allFiles = Directory.GetFiles(projectPath, "*.*", SearchOption.AllDirectories);
+        var filesToDigest = new List<string>();
+
+        // Filtra i file
+        foreach (var file in allFiles)
+        {
+            if (ShouldIncludeFile(file, projectPath))
+                filesToDigest.Add(file);
+        }
 
         if (filesToDigest.Count == 0)
         {
             Console.ForegroundColor = ConsoleColor.Yellow;
             Console.WriteLine("⚠️ No relevant files found to generate the digest.");
             Console.ResetColor();
-            // Crea comunque un file vuoto o con un messaggio? Per ora, esce senza creare il file.
-            // Se si vuole un file vuoto: File.WriteAllText(outputFilePath, "# AI Project Digest\n\nNo relevant files found.");
             return;
         }
 
         Console.WriteLine($"📁 Found {filesToDigest.Count} relevant files to include.");
 
-        var markdownBuilder = new StringBuilder();
+        // Crea il contenuto markdown
+        var content = CreateMarkdownContent(filesToDigest, projectPath);
 
-        // Header del Markdown
-        markdownBuilder.AppendLine($"Total files included: {filesToDigest.Count}\n");
-        markdownBuilder.AppendLine("---");
-
-        // Contenuto dei file
-        int processedCount = 0;
-        foreach (var filePath in filesToDigest)
-        {
-            processedCount++;
-            var relativePath = Path.GetRelativePath(projectPath, filePath);
-            Console.WriteLine($"📄 Processing ({processedCount}/{filesToDigest.Count}): {relativePath}");
-
-            string content;
-            try
-            {
-                content = File.ReadAllText(filePath);
-            }
-            catch (Exception ex)
-            {
-                Console.ForegroundColor = ConsoleColor.DarkYellow;
-                Console.WriteLine($"   Skipping file {relativePath} due to read error: {ex.Message}");
-                Console.ResetColor();
-                content = $"Error reading file: {ex.Message}"; // Includi un messaggio di errore nel digest
-            }
-
-            var extension = Path.GetExtension(filePath);
-            var language = GetLanguageFromExtension(extension);
-
-            markdownBuilder.AppendLine($"\n## File: `{relativePath}`");
-            markdownBuilder.AppendLine($"Language: `{language}`");
-            markdownBuilder.AppendLine($"\n```{language}");
-            markdownBuilder.AppendLine(content);
-            markdownBuilder.AppendLine("```");
-            markdownBuilder.AppendLine("\n---");
-        }
-
+        // Scrivi il file
         try
         {
-            File.WriteAllText(outputFilePath, markdownBuilder.ToString());
+            File.WriteAllText(outputFilePath, content);
         }
         catch (Exception ex)
         {
-            // Rilancia per essere catturata dal Main e loggata correttamente
             throw new IOException($"Failed to write digest file to '{outputFilePath}'.", ex);
         }
     }
 
-    private IEnumerable<string> GetRelevantFiles(string projectPath)
+    private bool ShouldIncludeFile(string filePath, string projectPath)
     {
-        return Directory.EnumerateFiles(projectPath, "*.*", SearchOption.AllDirectories)
-            .Where(filePath =>
-            {
-                // 1. Controllo Esclusione Cartelle
-                // Ottieni il percorso relativo della directory del file
-                var relativeDirectory = Path.GetDirectoryName(Path.GetRelativePath(projectPath, filePath));
-                if (!string.IsNullOrEmpty(relativeDirectory))
-                {
-                    // Separa il percorso in segmenti e controlla se uno di essi è escluso
-                    var directoryParts = relativeDirectory.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
-                    if (directoryParts.Any(part => _excludedFolders.Contains(part)))
-                        return false; // File in una cartella esclusa
-                }
+        var fileName = Path.GetFileName(filePath);
+        var extension = Path.GetExtension(filePath).ToLowerInvariant();
 
-                var fileName = Path.GetFileName(filePath);
+        // 1. File prioritari sono sempre inclusi (se non in cartelle ignorate)
+        if (IsPriorityFile(fileName))
+        {
+            return !IsInIgnoredFolder(filePath, projectPath);
+        }
 
-                // 2. Controllo Inclusione Prioritaria (es. README.md)
-                // Se un file è prioritario, lo includiamo subito a meno che non sia in una cartella esclusa (già controllato).
-                // Non verrà sottoposto a esclusione per pattern o estensione.
-                if (_priorityIncludes.Contains(fileName))
-                    return true;
+        // 2. Ignora se in cartella ignorata
+        if (IsInIgnoredFolder(filePath, projectPath))
+            return false;
 
-                // 3. Controllo Esclusione per Pattern di Nome File
-                if (IsFileExcludedByPattern(fileName))
-                    return false;
+        // 3. Ignora se corrisponde a pattern ignorati
+        if (MatchesIgnoredPattern(fileName))
+            return false;
 
-                // 4. Controllo Inclusione per Estensione
-                var extension = Path.GetExtension(fileName); // es. ".cs"
-                if (string.IsNullOrEmpty(extension))
-                    return false; // File senza estensione non sono inclusi (a meno che non prioritari)
-
-                return _includedExtensions.Contains(extension); // _includedExtensions usa StringComparer.OrdinalIgnoreCase
-            })
-            .OrderBy(filePath => filePath, StringComparer.Ordinal); // Ordina i percorsi
+        // 4. Includi solo se ha estensione valida
+        return _allowedExtensions.Contains(extension);
     }
 
-    private bool IsFileExcludedByPattern(string fileName)
+    private bool IsPriorityFile(string fileName)
     {
-        // Confronto case-insensitive grazie al comparer dell'HashSet _excludedFilePatterns
-        if (_excludedFilePatterns.Contains(fileName)) // Match esatto
+        return _priorityFiles.Any(priority => priority.Equals(fileName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private bool IsInIgnoredFolder(string filePath, string projectPath)
+    {
+        var relativePath = Path.GetRelativePath(projectPath, filePath);
+        var pathParts = relativePath.Split(Path.DirectorySeparatorChar);
+
+        // Controlla se qualche parte del percorso è una cartella ignorata
+        return pathParts.Any(part =>
+            _ignoredFolders.Any(ignored =>
+                ignored.Equals(part, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private bool MatchesIgnoredPattern(string fileName)
+    {
+        foreach (var pattern in _ignoredFilePatterns)
+        {
+            if (SimplePatternMatch(fileName, pattern))
+                return true;
+        }
+        return false;
+    }
+
+    private static bool SimplePatternMatch(string fileName, string pattern)
+    {
+        // Match esatto
+        if (fileName.Equals(pattern, StringComparison.OrdinalIgnoreCase))
             return true;
 
-        foreach (var pattern in _excludedFilePatterns)
+        // Nessun wildcard = no match
+        if (!pattern.Contains('*'))
+            return false;
+
+        // Pattern tipo "*.ext"
+        if (pattern.StartsWith("*."))
         {
-            if (pattern.Contains("*")) // Solo se il pattern contiene un wildcard
+            var extension = pattern.Substring(1); // rimuovi il *
+            return fileName.EndsWith(extension, StringComparison.OrdinalIgnoreCase);
+        }
+
+        // Pattern tipo "nome.*"
+        if (pattern.EndsWith(".*"))
+        {
+            var baseName = pattern.Substring(0, pattern.Length - 2); // rimuovi .*
+            return fileName.StartsWith(baseName, StringComparison.OrdinalIgnoreCase);
+        }
+
+        // Pattern tipo "appsettings.*.json"
+        if (pattern.Count(c => c == '*') == 1)
+        {
+            var parts = pattern.Split('*');
+            if (parts.Length == 2)
             {
-                // Gestione pattern con wildcard (semplificata)
-                if (pattern.StartsWith("*.") && fileName.EndsWith(pattern[1..], StringComparison.OrdinalIgnoreCase)) // Es. "*.log" -> ".log"
-                    return true;
-                else if (pattern.EndsWith(".*") && fileName.StartsWith(pattern.Substring(0, pattern.Length - 2), StringComparison.OrdinalIgnoreCase)) // Es. "file.*" -> "file"
-                    return true;
-                else if (pattern.StartsWith("*") && pattern.EndsWith("*") && pattern.Length > 2) // Es. "*Generated*"
-                    if (fileName.Contains(pattern.Substring(1, pattern.Length - 2), StringComparison.OrdinalIgnoreCase))
-                        return true;
-                    else if (pattern.Contains("*") && pattern.Count(c => c == '*') == 1) // Es. "appsettings.*.json" o "file*.txt"
-                    {
-                        var parts = pattern.Split('*');
-                        if (parts.Length == 2)
-                        {
-                            bool startsWith = string.IsNullOrEmpty(parts[0]) || fileName.StartsWith(parts[0], StringComparison.OrdinalIgnoreCase);
-                            bool endsWith = string.IsNullOrEmpty(parts[1]) || fileName.EndsWith(parts[1], StringComparison.OrdinalIgnoreCase);
-                            if (startsWith && endsWith && fileName.Length >= (parts[0].Length + parts[1].Length))
-                                return true;
-                        }
-                    }
+                var prefix = parts[0];
+                var suffix = parts[1];
+
+                var hasPrefix = string.IsNullOrEmpty(prefix) ||
+                               fileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+                var hasSuffix = string.IsNullOrEmpty(suffix) ||
+                               fileName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase);
+
+                return hasPrefix && hasSuffix;
             }
         }
 
         return false;
     }
 
+    private string CreateMarkdownContent(List<string> filesToDigest, string projectPath)
+    {
+        var markdown = new StringBuilder();
+
+        // Header
+        markdown.AppendLine($"Total files included: {filesToDigest.Count}");
+        markdown.AppendLine();
+        markdown.AppendLine("---");
+
+        // Processa ogni file
+        for (int i = 0; i < filesToDigest.Count; i++)
+        {
+            var filePath = filesToDigest[i];
+            var relativePath = Path.GetRelativePath(projectPath, filePath);
+
+            Console.WriteLine($"📄 Processing ({i + 1}/{filesToDigest.Count}): {relativePath}");
+
+            // Leggi il contenuto del file
+            string fileContent;
+            try
+            {
+                fileContent = File.ReadAllText(filePath);
+            }
+            catch (Exception ex)
+            {
+                Console.ForegroundColor = ConsoleColor.DarkYellow;
+                Console.WriteLine($"   Skipping file {relativePath} due to read error: {ex.Message}");
+                Console.ResetColor();
+                continue; // Salta questo file
+            }
+
+            // Determina il linguaggio
+            var language = GetLanguageFromExtension(Path.GetExtension(filePath));
+
+            // Aggiungi al markdown
+            markdown.AppendLine();
+            markdown.AppendLine($"## File: `{relativePath}`");
+            markdown.AppendLine($"Language: `{language}`");
+            markdown.AppendLine();
+            markdown.AppendLine($"```{language}");
+            markdown.AppendLine(fileContent);
+            markdown.AppendLine("---");
+        }
+
+        return markdown.ToString();
+    }
+
     private static string GetLanguageFromExtension(string extension)
     {
-        // extension include il punto, es. ".cs". Converti a lowercase per il matching.
         return extension.ToLowerInvariant() switch
         {
             ".cs" => "csharp",
@@ -236,7 +308,7 @@ public class ProjectDigestGenerator
             ".py" => "python",
             ".java" => "java",
             ".cpp" or ".cxx" or ".cc" or ".c++" => "cpp",
-            ".h" or ".hpp" or ".hh" => "cpp", // Header C/C++ generalmente come cpp per highlighting
+            ".h" or ".hpp" or ".hh" => "cpp",
             ".c" => "c",
             ".html" or ".htm" => "html",
             ".css" => "css",
@@ -253,13 +325,13 @@ public class ProjectDigestGenerator
             ".xml" => "xml",
             ".yaml" or ".yml" => "yaml",
             ".md" or ".markdown" => "markdown",
-            ".sh" => "bash", // o shell
+            ".sh" => "bash",
             ".ps1" => "powershell",
             ".fs" or ".fsi" or ".fsx" => "fsharp",
-            ".csproj" => "xml", // I file Csproj sono XML
-            ".sln" => "text",   // I file SLN hanno un formato custom, 'text' è un fallback sicuro
+            ".csproj" => "xml",
+            ".sln" => "text",
             ".txt" => "text",
-            _ => "text" // Fallback generico
+            _ => "text"
         };
     }
 }
