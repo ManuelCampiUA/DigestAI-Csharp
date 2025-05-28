@@ -13,7 +13,7 @@ Generates a Markdown digest of a software project codebase.
 Usage: DigestAICsharp.exe [path] [options]
 path                     Project path (default: current directory if first arg is an option or omitted).
 Options:
---output <filename>      Output file name (default: ai-digest.md).
+--output <filename>      Output file name (default: digestedCode.txt).
 --help, -h               Show this help message.";
 
     Console.WriteLine(help);
@@ -25,7 +25,7 @@ var projectPath = string.IsNullOrEmpty(projectPathArg) || projectPathArg == "." 
     ? Directory.GetCurrentDirectory()
     : Path.GetFullPath(projectPathArg);
 
-var outputFile = GetArgumentValue(args, "--output") ?? "ai-digest.md";
+var outputFile = GetArgumentValue(args, "--output") ?? "digestedCode.txt";
 var outputFullPath = Path.GetFullPath(outputFile); // Per mostrare il percorso completo nel messaggio finale
 
 try
