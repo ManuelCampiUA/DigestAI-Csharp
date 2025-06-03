@@ -11,7 +11,7 @@ var options = ParseArguments(args);
 try
 {
     var generator = new ProjectDigestGenerator();
-    generator.Generate(options.ProjectPath, options.OutputFilePath);
+    await generator.GenerateAsync(options.ProjectPath, options.OutputFilePath);
 
     DisplaySuccess(options.OutputFilePath);
 }

@@ -62,7 +62,6 @@ public class ProjectDigestGenerator
         ".nuget" // NuGet local cache
     };
 
-    // Pattern file da ignorare
     private readonly HashSet<string> _ignoredFilePatterns = new(StringComparer.OrdinalIgnoreCase)
     {
         // Speciali
@@ -90,7 +89,7 @@ public class ProjectDigestGenerator
         // Testing/Coverage
         "*.coverage", "coverage.xml", "*.lcov", "*.trx", "*.runsettings",
         
-        // Logs
+        // logs
         "*.log", "npm-debug.log*", "yarn-debug.log*", "lerna-debug.log*",
         
         // Database files
@@ -112,11 +111,14 @@ public class ProjectDigestGenerator
         "*.jpg", "*.jpeg", "*.png", "*.gif", "*.bmp", "*.ico", "*.mp4", "*.avi", "*.mov", "*.wmv", "*.mp3", "*.wav"
     };
 
-    public void Generate(string projectPath, string outputFilePath)
+    public async Task GenerateAsync(string projectPath, string outputFilePath)
     {
         // Verifica che la cartella esista
         if (!Directory.Exists(projectPath))
             throw new DirectoryNotFoundException($"Project directory not found: {projectPath}");
+
+        // Elimina il file di output se esiste già
+        await HandleExistingOutputFileAsync(outputFilePath);
 
         Console.WriteLine($"🔍 Scanning project: {projectPath}");
 
@@ -141,18 +143,115 @@ public class ProjectDigestGenerator
 
         Console.WriteLine($"📁 Found {filesToDigest.Count} relevant files to include.");
 
-        // Crea il contenuto markdown
-        var content = CreateMarkdownContent(filesToDigest, projectPath);
+        // Genera struttura ad albero
+        var treeStructure = GenerateProjectTree(projectPath, filesToDigest);
+
+        // Crea il contenuto markdown con la struttura ad albero
+        var content = await CreateMarkdownContentAsync(filesToDigest, projectPath, treeStructure);
 
         // Scrivi il file
         try
         {
-            File.WriteAllText(outputFilePath, content);
+            await File.WriteAllTextAsync(outputFilePath, content);
         }
         catch (Exception ex)
         {
             throw new IOException($"Failed to write digest file to '{outputFilePath}'.", ex);
         }
+    }
+
+    private static async Task HandleExistingOutputFileAsync(string outputFilePath)
+    {
+        if (!File.Exists(outputFilePath)) return;
+
+        try
+        {
+            // Elimina il file esistente
+            File.Delete(outputFilePath);
+            Console.WriteLine($"🗑️ Removed existing output file: {Path.GetFileName(outputFilePath)}");
+
+            // Piccola pausa per assicurarsi che l'eliminazione sia completata
+            await Task.Delay(10);
+        }
+        catch (Exception ex)
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine($"⚠️ Warning: Could not delete existing file {outputFilePath}: {ex.Message}");
+            Console.WriteLine("The file will be overwritten.");
+            Console.ResetColor();
+        }
+    }
+
+    private string GenerateProjectTree(string projectPath, List<string> filesToDigest)
+    {
+        Console.WriteLine("🌳 Generating project tree structure...");
+
+        var projectName = Path.GetFileName(projectPath);
+        var tree = new StringBuilder();
+
+        tree.AppendLine($"{projectName}/");
+        tree.AppendLine("│");
+
+        // Crea una struttura gerarchica dei file
+        var filesByDirectory = filesToDigest
+            .Select(file => Path.GetRelativePath(projectPath, file))
+            .OrderBy(path => path)
+            .GroupBy(path => Path.GetDirectoryName(path) ?? "")
+            .OrderBy(group => group.Key)
+            .ToList();
+
+        // Tieni traccia delle directory già mostrate
+        var shownDirectories = new HashSet<string>();
+
+        for (int i = 0; i < filesByDirectory.Count; i++)
+        {
+            var group = filesByDirectory[i];
+            var directory = group.Key;
+            var isLastDirectory = (i == filesByDirectory.Count - 1);
+
+            // Se è la directory root, non mostrare il nome della directory
+            if (string.IsNullOrEmpty(directory))
+            {
+                // File nella root
+                var rootFiles = group.ToList();
+                for (int j = 0; j < rootFiles.Count; j++)
+                {
+                    var fileName = Path.GetFileName(rootFiles[j]);
+                    var isLastFile = (j == rootFiles.Count - 1) && isLastDirectory;
+                    var prefix = isLastFile ? "└── " : "├── ";
+                    tree.AppendLine($"{prefix}{fileName}");
+                }
+            }
+            else
+            {
+                // Directory con file
+                var prefix = isLastDirectory ? "└── " : "├── ";
+                var dirName = directory.Replace(Path.DirectorySeparatorChar, '/');
+
+                var dirDisplay = dirName;
+
+                tree.AppendLine($"{prefix}{dirDisplay}");
+
+                // Aggiungi i file nella directory
+                var filesInDir = group.ToList();
+                for (int j = 0; j < filesInDir.Count; j++)
+                {
+                    var fileName = Path.GetFileName(filesInDir[j]);
+                    var isLastFile = (j == filesInDir.Count - 1);
+                    var filePrefix = isLastDirectory
+                        ? (isLastFile ? "    └── " : "    ├── ")
+                        : (isLastFile ? "│   └── " : "│   ├── ");
+                    tree.AppendLine($"{filePrefix}{fileName}");
+                }
+
+                if (!isLastDirectory)
+                {
+                    tree.AppendLine("│");
+                }
+            }
+        }
+
+        return tree.ToString();
     }
 
     private bool ShouldIncludeFile(string filePath, string projectPath)
@@ -215,88 +314,108 @@ public class ProjectDigestGenerator
             return false;
 
         // Pattern tipo "*.ext"
-        if (pattern.StartsWith("*."))
+        if (pattern.StartsWith("*.") && pattern.Count(c => c == '*') == 1)
         {
             var extension = pattern.Substring(1); // rimuovi il *
             return fileName.EndsWith(extension, StringComparison.OrdinalIgnoreCase);
         }
 
         // Pattern tipo "nome.*"
-        if (pattern.EndsWith(".*"))
+        if (pattern.EndsWith(".*") && pattern.Count(c => c == '*') == 1)
         {
             var baseName = pattern.Substring(0, pattern.Length - 2); // rimuovi .*
             return fileName.StartsWith(baseName, StringComparison.OrdinalIgnoreCase);
         }
 
-        // Pattern tipo "appsettings.*.json"
+        // Pattern tipo "appsettings.*.json" (BUGFIX: logica corretta)
         if (pattern.Count(c => c == '*') == 1)
         {
-            var parts = pattern.Split('*');
-            if (parts.Length == 2)
+            var starIndex = pattern.IndexOf('*');
+            var prefix = pattern.Substring(0, starIndex);
+            var suffix = pattern.Substring(starIndex + 1);
+
+            var hasPrefix = string.IsNullOrEmpty(prefix) ||
+                           fileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+            var hasSuffix = string.IsNullOrEmpty(suffix) ||
+                           fileName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase);
+
+            // Verifica che ci sia abbastanza spazio per entrambi prefix e suffix
+            if (hasPrefix && hasSuffix)
             {
-                var prefix = parts[0];
-                var suffix = parts[1];
-
-                var hasPrefix = string.IsNullOrEmpty(prefix) ||
-                               fileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
-                var hasSuffix = string.IsNullOrEmpty(suffix) ||
-                               fileName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase);
-
-                return hasPrefix && hasSuffix;
+                var minLength = prefix.Length + suffix.Length;
+                return fileName.Length >= minLength;
             }
         }
 
         return false;
     }
 
-    private string CreateMarkdownContent(List<string> filesToDigest, string projectPath)
+    private async Task<string> CreateMarkdownContentAsync(List<string> filesToDigest, string projectPath, string treeStructure)
     {
         var markdown = new StringBuilder();
 
-        // Header
+        // Header con count
         markdown.AppendLine($"Total files included: {filesToDigest.Count}");
+        markdown.AppendLine();
+
+        markdown.AppendLine("## 📁 Project Structure");
+        markdown.AppendLine();
+        markdown.AppendLine("```");
+        markdown.AppendLine(treeStructure);
+        markdown.AppendLine("```");
         markdown.AppendLine();
         markdown.AppendLine("---");
 
         // Processa ogni file
-        for (int i = 0; i < filesToDigest.Count; i++)
+        var tasks = filesToDigest.Select((filePath, index) =>
+            ProcessFileAsync(filePath, index + 1, filesToDigest.Count, projectPath)).ToArray();
+
+        var fileContents = await Task.WhenAll(tasks);
+
+        // Aggiungi tutti i contenuti processati
+        foreach (var content in fileContents.Where(c => !string.IsNullOrEmpty(c)))
         {
-            var filePath = filesToDigest[i];
-            var relativePath = Path.GetRelativePath(projectPath, filePath);
-
-            Console.WriteLine($"📄 Processing ({i + 1}/{filesToDigest.Count}): {relativePath}");
-
-            // Leggi il contenuto del file
-            string fileContent;
-            try
-            {
-                fileContent = File.ReadAllText(filePath);
-            }
-            catch (Exception ex)
-            {
-                Console.ForegroundColor = ConsoleColor.DarkYellow;
-                Console.WriteLine($"   Skipping file {relativePath} due to read error: {ex.Message}");
-                Console.ResetColor();
-                continue; // Salta questo file
-            }
-
-            // Determina il linguaggio
-            var language = GetLanguageFromExtension(Path.GetExtension(filePath));
-
-            // Aggiungi al markdown
-            markdown.AppendLine();
-            markdown.AppendLine($"## File: `{relativePath}`");
-            markdown.AppendLine($"Language: `{language}`");
-            markdown.AppendLine();
-            markdown.AppendLine($"```{language}");
-            markdown.AppendLine(fileContent);
-            markdown.AppendLine("```");
-            markdown.AppendLine();
-            markdown.AppendLine("---");
-
+            markdown.AppendLine(content);
         }
 
         return markdown.ToString();
+    }
+
+    private async Task<string> ProcessFileAsync(string filePath, int currentIndex, int totalFiles, string projectPath)
+    {
+        var relativePath = Path.GetRelativePath(projectPath, filePath);
+        Console.WriteLine($"📄 Processing ({currentIndex}/{totalFiles}): {relativePath}");
+
+        // Leggi il contenuto del file in modo asincrono
+        string fileContent;
+        try
+        {
+            fileContent = await File.ReadAllTextAsync(filePath);
+        }
+        catch (Exception ex)
+        {
+            Console.ForegroundColor = ConsoleColor.DarkYellow;
+            Console.WriteLine($"   Skipping file {relativePath} due to read error: {ex.Message}");
+            Console.ResetColor();
+            return string.Empty; // Restituisci stringa vuota per file che non possono essere letti
+        }
+
+        // Determina il linguaggio
+        var language = GetLanguageFromExtension(Path.GetExtension(filePath));
+
+        // Crea il contenuto markdown per questo file
+        var content = new StringBuilder();
+        content.AppendLine();
+        content.AppendLine($"## File: `{relativePath}`");
+        content.AppendLine($"Language: `{language}`");
+        content.AppendLine();
+        content.AppendLine($"```{language}");
+        content.AppendLine(fileContent);
+        content.AppendLine("```");
+        content.AppendLine();
+        content.AppendLine("---");
+
+        return content.ToString();
     }
 
     private static string GetLanguageFromExtension(string extension)
