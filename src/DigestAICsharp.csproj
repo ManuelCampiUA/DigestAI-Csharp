@@ -8,4 +8,9 @@
 		<LangVersion>latest</LangVersion>
 	</PropertyGroup>
 
+	<ItemGroup>
+	  <PackageReference Include="Cocona" Version="2.2.0" />
+	  <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.6" />
+	</ItemGroup>
+
 </Project>
