@@ -1,102 +1,89 @@
 ﻿using DigestAICsharp;
+using Cocona;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
-if (ShouldShowHelp(args))
+var builder = CoconaApp.CreateBuilder();
+
+// Configura i servizi
+builder.Services.AddSingleton<ProjectDigestGenerator>();
+builder.Services.AddLogging(logging =>
 {
-    DisplayHelp();
-    return;
-}
+    logging.AddConsole();
+    logging.SetMinimumLevel(LogLevel.Information);
+});
 
-var options = ParseArguments(args);
+var app = builder.Build();
 
-try
+// Comando principale e unico
+app.AddCommand(async (
+
+    ILogger<Program> logger,
+
+    ProjectDigestGenerator generator,
+
+    [Argument(Description = "Project path to analyze")]
+    string? projectPath = null,
+
+    [Option('o', Description = "Output file name")]
+    string output = "digestedCode.txt",
+
+    [Option(Description = "Exclude additional file patterns (comma-separated)")]
+    string? excludePatterns = null,
+
+    [Option(Description = "Include additional file extensions (comma-separated)")]
+    string? includeExtensions = null,
+
+    [Option(Description = "Maximum file size in MB to process")]
+    int maxFileSizeMb = 10,
+
+    [Option(Description = "Show verbose output")]
+    bool verbose = false) =>
 {
-    var generator = new ProjectDigestGenerator();
-    await generator.GenerateAsync(options.ProjectPath, options.OutputFilePath);
+    // Normalizza il project path
+    var normalizedPath = NormalizeProjectPath(projectPath);
 
-    DisplaySuccess(options.OutputFilePath);
-}
-catch (Exception ex)
-{
-    DisplayError(ex);
-    Environment.ExitCode = 1;
-}
-
-static bool ShouldShowHelp(string[] args)
-{
-    return args.Length == 0 ||
-           args.Any(a => a.Equals("--help", StringComparison.OrdinalIgnoreCase) ||
-                        a.Equals("-h", StringComparison.OrdinalIgnoreCase));
-}
-
-static void DisplayHelp()
-{
-    const string help = """
-        AI Digest Generator
-        -------------------
-        Generates a Markdown digest of a software project codebase.
-        Usage: DigestAICsharp.exe [path] [options]
-        
-        Arguments:
-          path                     Project path (default: current directory)
-        
-        Options:
-          --output <filename>      Output file name (default: digestedCode.txt)
-          --help, -h               Show this help message
-        """;
-
-    Console.WriteLine(help);
-}
-
-static ProjectOptions ParseArguments(string[] args)
-{
-    var projectPathArg = args.FirstOrDefault(arg => !arg.StartsWith("-"));
-    var projectPath = DetermineProjectPath(projectPathArg);
-    var outputFile = GetArgumentValue(args, "--output") ?? "digestedCode.txt";
-
-    return new ProjectOptions(projectPath, Path.GetFullPath(outputFile));
-}
-
-static string DetermineProjectPath(string? projectPathArg)
-{
-    return string.IsNullOrEmpty(projectPathArg) || projectPathArg is "." or "./"
-        ? Directory.GetCurrentDirectory()
-        : Path.GetFullPath(projectPathArg);
-}
-
-static void DisplaySuccess(string outputFilePath)
-{
-    Console.ForegroundColor = ConsoleColor.Green;
-    Console.WriteLine($"✅ Digest generated successfully: {outputFilePath}");
-    Console.ResetColor();
-}
-
-static void DisplayError(Exception ex)
-{
-    Console.ForegroundColor = ConsoleColor.Red;
-    Console.Error.WriteLine("An unexpected error occurred:");
-    Console.Error.WriteLine(ex.ToString());
-    Console.ResetColor();
-}
-
-static string? GetArgumentValue(string[] args, string argumentName)
-{
-    for (int i = 0; i < args.Length - 1; i++)
+    // Valida che il path esista
+    if (!Directory.Exists(normalizedPath))
     {
-        if (args[i].Equals(argumentName, StringComparison.OrdinalIgnoreCase))
-        {
-            return !args[i + 1].StartsWith("-")
-                ? args[i + 1]
-                : LogWarningAndReturnNull(argumentName);
-        }
+        logger.LogError("Project directory not found: {ProjectPath}", normalizedPath);
+        return 1;
     }
-    return null;
-}
 
-static string? LogWarningAndReturnNull(string argumentName)
+    // Configurazione opzioni
+    var options = new ProjectOptions
+    {
+        ProjectPath = normalizedPath,
+        OutputFilePath = Path.GetFullPath(output),
+        ExcludePatterns = ParseCommaSeparatedValues(excludePatterns),
+        IncludeExtensions = ParseCommaSeparatedValues(includeExtensions),
+        MaxFileSizeMb = maxFileSizeMb,
+        Verbose = verbose
+    };
+
+    // Genera il digest
+    await generator.GenerateAsync(options);
+
+    // Messaggio di successo
+    Console.ForegroundColor = ConsoleColor.Green;
+    Console.WriteLine($"✅ Digest generated successfully: {options.OutputFilePath}");
+    Console.ResetColor();
+
+    return 0;
+});
+
+await app.RunAsync();
+
+static string NormalizeProjectPath(string? projectPath)
 {
-    Console.Error.WriteLine($"Warning: Argument '{argumentName}' is missing a value.");
-    return null;
+    return string.IsNullOrWhiteSpace(projectPath) || projectPath is "." or "./"
+        ? Directory.GetCurrentDirectory()
+        : Path.GetFullPath(projectPath);
 }
 
-// Record per le opzioni del progetto
-public record ProjectOptions(string ProjectPath, string OutputFilePath);
+static List<string> ParseCommaSeparatedValues(string? values)
+{
+    return string.IsNullOrWhiteSpace(values)
+        ? []
+        : [.. values.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+}
